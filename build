@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 ## load modules
-fpath=(/usr/lib/zsh_misc/libmisc.zwc $fpath)
+fpath=(/usr/lib/zsh_libmisc/libmisc.zwc $fpath)
 autoload nrandom
 
 ## env setup
