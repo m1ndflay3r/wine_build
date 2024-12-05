@@ -1,0 +1,83 @@
+#!/usr/bin/env zsh
+
+## load modules
+fpath=(/usr/lib/zsh_misc/libmisc.zwc $fpath)
+autoload nrandom
+
+## env setup
+export CC='clang'
+export CXX='clang++'
+export PATH=/usr/bin:$PATH
+alias make='make -j13'
+[ -z "$use_staging" ] && use_staging=0
+
+## error checks
+[ "$(whoami)" = root ] && \
+  print "Error: cannot run as root!" && \
+  return 1
+
+! which sudo &> /dev/null && \
+  print "Error: sudo binary not found!" && \
+  return 1
+
+## generate build num
+wine_build_num="$(nrandom)" &> /dev/null
+[ "$use_staging" = 1 ] && wine_build_num="staging_"$wine_build_num""
+
+## prevent running in wrong dir
+if [ "$(pwd)" != "/home/v1ru5/testing/wine-git" ]; then
+  echo "Disaster prevention: Refusing to build: wrong directory"
+  return 1
+fi
+
+## cleanup old files
+rm -rf ./wine*
+
+## repo clone
+[ "$use_staging" = 1 ] && git clone https://gitlab.winehq.org/wine/wine-staging
+git clone https://gitlab.winehq.org/wine/wine.git wine32
+
+## patch apply
+[ "$use_staging" = 1 ] && cd wine-staging
+[ "$use_staging" = 1 ] && ./staging/patchinstall.py DESTDIR=../wine32 --all
+[ "$use_staging" = 1 ] && cd ../
+
+## duplicate wine source
+cp -r wine32 wine64
+
+## wine64 build
+cd wine64
+./configure --prefix=/opt/wine-git_"$wine_build_num" --libdir=/opt/wine-git_"$wine_build_num"/lib --with-x --with-gstreamer --with-mingw --with-alsa --without-oss --enable-win64 
+make || return 1
+
+## wine32 build
+cd ../wine32
+./configure --prefix=/opt/wine-git_"$wine_build_num" --libdir=/opt/wine-git_"$wine_build_num"/lib --with-x --with-gstreamer --with-alsa --without-oss  --with-wine64=/home/v1ru5/testing/wine-git/wine64
+make || return 1
+
+## wine32 install
+sudo make install || return 1
+
+## wine64 install
+cd ../wine64
+sudo make install || return 1
+
+## symlink
+wine_savedir=$(pwd)
+cd /opt
+sudo ln -s wine-git_"$wine_build_num" "$(PATH=/opt/wine-git_"$wine_build_num"/bin:$PATH LD_LIBRARY_PATH=/opt/wine-git_"$wine_build_num"/lib:$LD_LIBRARY_PATH wine --version)"
+cd $wine_savedir
+
+## post-build print && additional symlinks
+print
+print
+print "Wine installed to /opt/wine-git_"$wine_build_num""
+print "symlinked to "$(PATH=/opt/wine-git_"$wine_build_num"/bin:$PATH LD_LIBRARY_PATH=/opt/wine-git_"$wine_build_num"/lib:$LD_LIBRARY_PATH wine --version)""
+[ "$use_staging" = 1 ] && \
+  sudo rm -rf wine-staging-latest && \
+  sudo ln -s wine-git_"$wine_build_num" wine-staging-latest && \
+  print "symlinked to wine-staging-latest" || \
+  sudo rm -rf wine-latest && \
+  sudo ln -s wine-git_"$wine_build_num" wine-latest && \
+  print "symlinked to wine-latest"
+return 0
